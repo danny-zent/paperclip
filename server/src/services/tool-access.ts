@@ -7359,10 +7359,39 @@ export function toolAccessService(
     }
     const descriptors: McpToolDescriptor[] = [];
     const seenCursors = new Set<string>();
+    let retriedWithSession = false;
     for (let page = 0; ; page += 1) {
       const payload = await withMcpConnectionFailure(() => readMcpHttpResponse(response, listRequestId));
-      const record = asRecord(payload);
-      if (record.error) throw new HttpError(502, "Remote MCP tool discovery failed", { code: "mcp_catalog_error" });
+      let record = asRecord(payload);
+      if (record.error) {
+        const rpcError = asRecord(record.error);
+        logger.warn(
+          { connectionId: connection.id, page, usedInitializedSession, rpcCode: rpcError.code, rpcMessage: String(rpcError.message ?? "").slice(0, 300) },
+          "remote MCP tools/list returned a JSON-RPC error",
+        );
+        // Some servers (e.g. Datadog) reject a session-less `tools/list` with
+        // HTTP 200 + a JSON-RPC error instead of HTTP 400. `tools/list` is
+        // read-only, so retry once after the initialize handshake.
+        if (page === 0 && !usedInitializedSession && !retriedWithSession) {
+          retriedWithSession = true;
+          try {
+            sessionHeaders = await initializeMcpHttpSession({ send: sendRemote, headers, requestId: "paperclip-catalog-refresh" });
+            response = await sendToolsList(sessionHeaders);
+            if (response.ok) {
+              record = asRecord(await withMcpConnectionFailure(() => readMcpHttpResponse(response, listRequestId)));
+              if (!record.error) {
+                const nextConfig = { ...connection.config, mcpSessionRequired: true };
+                await db.update(toolConnections)
+                  .set({ config: nextConfig, transportConfig: nextConfig, updatedAt: now() })
+                  .where(and(eq(toolConnections.id, connection.id), eq(toolConnections.companyId, connection.companyId)));
+              }
+            }
+          } catch (retryError) {
+            logger.warn({ connectionId: connection.id, err: retryError }, "remote MCP initialize retry after JSON-RPC error failed");
+          }
+        }
+        if (record.error) throw new HttpError(502, "Remote MCP tool discovery failed", { code: "mcp_catalog_error" });
+      }
       const result = asRecord(record.result);
       if (!Array.isArray(result.tools)) throw new HttpError(502, "Remote MCP returned an invalid tool catalog", { code: "mcp_catalog_invalid" });
       descriptors.push(...result.tools.map((tool) => normalizeToolDescriptor(tool)).filter((tool): tool is McpToolDescriptor => Boolean(tool)));
