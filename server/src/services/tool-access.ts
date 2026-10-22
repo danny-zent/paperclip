@@ -7303,9 +7303,12 @@ export function toolAccessService(
         );
       }
       const authenticate = response.headers.get("www-authenticate") ?? "";
+      // Some MCP servers (e.g. Datadog) answer 401 with no WWW-Authenticate
+      // header but still publish RFC 9728/8414 metadata, so a bare 401 also
+      // tries well-known discovery.
       if (
         response.status === 401 &&
-        /bearer|oauth|authorization/i.test(authenticate)
+        (/bearer|oauth|authorization/i.test(authenticate) || !authenticate.trim())
       ) {
         const endpoints = await discoverOAuthEndpoints(
           connection,
