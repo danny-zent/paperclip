@@ -2741,6 +2741,11 @@ export function createPluginWorkerHandle(
       if (proactiveCompanyId && proactiveCompanyScopes.has(proactiveCompanyId)) {
         return { invocationScope: { companyId: proactiveCompanyId } };
       }
+      // A scheduled job (runJob carries no company, so no invocation id) that
+      // lists companies would otherwise be refused whenever an unrelated
+      // invocation happens to be in flight. companies.list is already allowed
+      // without a company scope, so do not mark it as a scope escape.
+      if (message.method === "companies.list") return {};
       const hasActiveInvocation = activeInvocations.size > 0 ||
         Array.from(pendingRequests.values()).some((pending) => pending.invocationId);
       return hasActiveInvocation ? { invalidInvocationScope: true } : {};
