@@ -417,7 +417,14 @@ export function toolAccessRoutes(
   }
 
   function oauthRedirectUri(req: Request, forInitiation = false) {
-    const baseUrl = configuredPublicBaseUrl()
+    // Opt-in: a browser on the host machine (loopback Host header) keeps OAuth
+    // on loopback. Some providers (e.g. Datadog's shared DCR client) accept
+    // http://127.0.0.1 redirects but reject the public tunnel URL.
+    const loopbackFirst = process.env.PAPERCLIP_OAUTH_LOOPBACK_REDIRECT === "1"
+      ? requestLoopbackBaseUrl(req, forInitiation)
+      : null;
+    const baseUrl = loopbackFirst
+      ?? configuredPublicBaseUrl()
       ?? trustedBrowserBaseUrl(req)
       ?? enrolledConnectorBaseUrl(req)
       ?? requestLoopbackBaseUrl(req, forInitiation);
