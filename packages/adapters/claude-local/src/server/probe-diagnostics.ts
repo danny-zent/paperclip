@@ -7,6 +7,15 @@ import type { AdapterEnvironmentCheck } from "@paperclipai/adapter-utils";
  */
 export const ADAPTER_TEST_HOST_TARGET_LABEL = "Paperclip host";
 
+/**
+ * Prompt for the Claude hello probe. Account- or user-level instructions (for
+ * example "always answer in Korean") make current Opus/Sonnet models answer a
+ * bare "Respond with hello." with a translated greeting, which the
+ * `/\bhello\b/` check then rejects. Ask for the literal ASCII word instead.
+ */
+export const CLAUDE_HELLO_PROBE_PROMPT =
+  'Output exactly the ASCII word "hello" and nothing else. Do not translate it.';
+
 // The login hint may show a login URL. The URL must be a normalized https URL
 // with an allowlisted Claude or Anthropic host and no query or fragment. A host
 // matches when it equals a suffix or ends with a dot and the suffix.

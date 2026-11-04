@@ -50,6 +50,7 @@ import {
   buildClaudeLoginRequiredHint,
   classifyThrownErrorClass,
   logSandboxProbeDiagnostic,
+  CLAUDE_HELLO_PROBE_PROMPT,
 } from "./probe-diagnostics.js";
 import { createWorkspaceRestoreTeardown } from "@paperclipai/adapter-utils/workspace-restore-teardown";
 import { buildLocalAdapterTestProbeEnv } from "./probe-env.js";
@@ -690,7 +691,7 @@ export async function probeClaudeAcpSandboxLogin(input: {
       env,
       timeoutSec,
       graceSec: 5,
-      stdin: "Respond with hello.",
+      stdin: CLAUDE_HELLO_PROBE_PROMPT,
       onLog: async () => {},
     });
   } catch (err) {

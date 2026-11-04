@@ -42,6 +42,7 @@ import {
   buildAdapterTestTargetCheck,
   buildClaudeLoginRequiredHint,
   logSandboxProbeDiagnostic,
+  CLAUDE_HELLO_PROBE_PROMPT,
 } from "./probe-diagnostics.js";
 import { buildLocalAdapterTestProbeEnv } from "./probe-env.js";
 
@@ -402,7 +403,7 @@ export async function testEnvironment(
           env: probeEnv,
           timeoutSec: helloProbeTimeoutSec,
           graceSec: 5,
-          stdin: "Respond with hello.",
+          stdin: CLAUDE_HELLO_PROBE_PROMPT,
           onLog: async () => {},
         },
       );
