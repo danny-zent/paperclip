@@ -420,7 +420,21 @@ export function toolAccessRoutes(
     // Opt-in: a browser on the host machine (loopback Host header) keeps OAuth
     // on loopback. Some providers (e.g. Datadog's shared DCR client) accept
     // http://127.0.0.1 redirects but reject the public tunnel URL.
-    const loopbackFirst = process.env.PAPERCLIP_OAUTH_LOOPBACK_REDIRECT === "1"
+    // Judge "on the host machine" by where the browser really is, not the
+    // Host header. The dev server's internal proxy rewrites both Host and
+    // Origin to localhost even for a browser on the public tunnel; only
+    // x-forwarded-host keeps the public name. A tunnel browser has no session
+    // cookie on a loopback callback (403), so it must keep the public URL.
+    const forwardedHost = req.get("x-forwarded-host")?.split(",")[0]?.trim();
+    const browserOrigin = req.get("origin")?.trim();
+    let browserOnLoopback = true;
+    try {
+      if (forwardedHost) browserOnLoopback = isLoopbackHost(new URL(`http://${forwardedHost}`).hostname);
+      else if (browserOrigin) browserOnLoopback = isLoopbackHost(new URL(browserOrigin).hostname);
+    } catch {
+      browserOnLoopback = false;
+    }
+    const loopbackFirst = process.env.PAPERCLIP_OAUTH_LOOPBACK_REDIRECT === "1" && browserOnLoopback
       ? requestLoopbackBaseUrl(req, forInitiation)
       : null;
     const baseUrl = loopbackFirst

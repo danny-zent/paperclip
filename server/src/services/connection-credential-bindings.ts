@@ -49,10 +49,15 @@ export async function syncConnectionCredentialBindings(
     // than one personal grant can reference the same client registration.
     // Binding rows are unique per secret/config path, so collapse those mirrors
     // before replacing the durable projection declarations.
-    const bindings = [...new Map(rawBindings.map((ref) => [
-      `${ref.secretId}:${ref.configPath}`,
-      ref,
-    ])).values()];
+    // The unique index is per config path, not per secret: a grant can still
+    // reference an older secret at the same path (e.g. the previous DCR
+    // client secret after re-registration). Keep the first ref per path so the
+    // connection-owned credentials, listed first above, win over grant mirrors.
+    const bindingsByPath = new Map<string, (typeof rawBindings)[number]>();
+    for (const ref of rawBindings) {
+      if (!bindingsByPath.has(ref.configPath)) bindingsByPath.set(ref.configPath, ref);
+    }
+    const bindings = [...bindingsByPath.values()];
     const secretRows = bindings.length > 0
       ? await dbClient.select({
           id: companySecrets.id,
