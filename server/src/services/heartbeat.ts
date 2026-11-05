@@ -273,6 +273,7 @@ import {
 import { withAdapterExecutionPhase } from "@paperclipai/adapter-utils/execution-phase";
 import {
   recordNativeLocalProcessStop,
+  recordNeverLaunchedProcessStop,
   settleNativeRunProcess,
 } from "./native-local-process-stop.js";
 
@@ -2820,6 +2821,10 @@ export function heartbeatService(
             error: `Disposition repair suppressed: ${repairBlock}`,
           });
           if (cancelled.updated) {
+            // Cancelled before dispatch: leave a stop receipt so the next
+            // message on this issue is not held on process_identity_missing.
+            await recordNeverLaunchedProcessStop(db, cancelled.run!, "legacy_disposition_repair_suppressed").catch(err =>
+              logger.warn({ err, runId: run.id }, "failed to record never-launched stop receipt"));
             await setWakeupStatus(run.wakeupRequestId, "skipped", { finishedAt: new Date(), error: repairBlock });
             await releaseIssueExecutionAndPromote(cancelled.run!, { suppressImmediateRecovery: true });
             await finalizeAgentStatus(run.agentId, "cancelled");

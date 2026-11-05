@@ -69,6 +69,27 @@ export async function recordNativeLocalProcessStop(db: Db, run: Pick<typeof hear
   return true;
 }
 
+/**
+ * Record that a run was cancelled at the dispatch gate, before any provider
+ * process was launched. Without this receipt the next message on the same
+ * issue waits forever on `process_identity_missing`.
+ */
+export async function recordNeverLaunchedProcessStop(db: Db, run: Pick<typeof heartbeatRuns.$inferSelect,
+  "id" | "companyId" | "agentId" | "processPid" | "processGroupId" | "processStartedAt">, reason: string) {
+  if (run.processPid || run.processGroupId || run.processStartedAt) return false;
+  await appendHeartbeatRunEvent(db, {
+    companyId: run.companyId,
+    runId: run.id,
+    agentId: run.agentId,
+    eventType: LOCAL_PROCESS_STOPPED,
+    stream: "system",
+    level: "info",
+    message: `Run was cancelled before dispatch (${reason}); no provider process was launched.`,
+    payload: { processPid: null, processGroupId: null, processStartedAt: null, neverLaunched: true, reason },
+  });
+  return true;
+}
+
 /** Only server-authored evidence counts. A later launch invalidates the receipt. */
 export async function hasNativeLocalProcessStop(db: Db, companyId: string, runId: string) {
   const [event] = await db.select({ eventType: heartbeatRunEvents.eventType })
