@@ -601,7 +601,7 @@ export function createOAuthAuthorizationStart(db: Db, dependencies: Dependencies
         },
         target: {
           type: "custom" as const,
-          key: `connection:${connection.uid}:user:${authorizationSubjectUserId}`,
+          key: `connection:${connection.id}:user:${authorizationSubjectUserId}`,
           revisionId: state,
           label: `Connect ${providerName}`,
           href: authorizationUrl.toString(),

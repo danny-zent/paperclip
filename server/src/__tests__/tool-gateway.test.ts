@@ -2562,7 +2562,7 @@ rl.on("line", (line) => {
       });
       expect(interaction!.payload).toMatchObject({
         prompt: `Connect your ${connection.name} account to continue`,
-        target: { key: `connection:${connection.uid}:user:carol` },
+        target: { key: `connection:${connection.id}:user:carol` },
       });
 
       await db.insert(connectionGrants).values({

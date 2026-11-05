@@ -4593,7 +4593,7 @@ export function createToolGatewayService(
           : "This run needs your personal authorization. Paperclip will not use another user's identity.",
       target: {
         type: "custom" as const,
-        key: `connection:${connection.uid}:user:${userId}`,
+        key: `connection:${connection.id}:user:${userId}`,
         revisionId: connection.updatedAt.toISOString(),
         label: `Connect ${connection.name}`,
         href,
