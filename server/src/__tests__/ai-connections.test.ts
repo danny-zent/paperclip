@@ -13,7 +13,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { localEncryptedProvider } from "../secrets/local-encrypted-provider.js";
 import { promises as fs } from "node:fs";
-import { mkdtemp, realpath, rm, access, readFile, writeFile, stat } from "node:fs/promises";
+import { mkdtemp, realpath, rm, access, readFile, writeFile, stat, mkdir, chmod } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { and, eq, sql } from "drizzle-orm";
@@ -356,6 +356,11 @@ describe("managed AI connections", () => {
       expect(runtime.config).toMatchObject({ provider: "acpx", acpxAgent: "copilot", model: config.model, env: { COPILOT_GITHUB_TOKEN: token, GH_TOKEN: "", GITHUB_TOKEN: "", OPENAI_API_KEY: "", ANTHROPIC_API_KEY: "" } });
       expect(runtime.attribution).toMatchObject({ provider: "github", method: "api_key", connectionId: account.connectionId, grantId: account.grantId });
       expect(config.env.COPILOT_GITHUB_TOKEN).toBe("ambient-never-use");
+      // Go's module cache is read-only; cleanup must still remove the home.
+      const modCache = path.join(runtime.home!, "go", "pkg", "mod", "example.com@v1.0.0");
+      await mkdir(modCache, { recursive: true });
+      await writeFile(path.join(modCache, "go.mod"), "module example.com\n");
+      await chmod(modCache, 0o555);
     } finally { await runtime.cleanup(); }
     await expect(access(runtime.home!)).rejects.toThrow();
     await expect(service.select({ ...runInput, userId: "bob", runnerProvider: "acpx", acpxAgent: "copilot" })).rejects.toThrow();

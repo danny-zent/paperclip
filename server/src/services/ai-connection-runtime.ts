@@ -27,6 +27,7 @@ import { decideGrokAuthMerge } from "@paperclipai/adapter-grok-local/server";
 import { NativeEnvironmentProbeCleanupError, sanitizeAntigravityCredential } from "../vendor/paperclip-runner/index.js";
 import { readLocalAiCredentialFile } from "./local-ai-credential-file.js";
 import { prepareAntigravityCredentialWriteback } from "./native-runtime/antigravity-runner-credentials.js";
+import { removeNativeHarnessBackup } from "./native-runtime/native-harness-backup-cleanup.js";
 import { quotaCredentialHash, quotaCredentialRecovery, RetiredCredentialRecoveryError } from "./quota-credential-recovery.js";
 import { assertAiCredentialCleanupSettled, bindRetainedAiCredentialHome, reconcileRetainedAiCleanup, retainAiCredentialCleanup, type RetainedAiCleanupScope } from "./retained-ai-credential-cleanup.js";
 
@@ -437,7 +438,13 @@ export async function prepareManagedAiRuntime(
     let removalOnly = false;
     let deferredWriteback: { cause: unknown } | undefined;
     const removeHome = async () => {
-      if (home) await rm(home, { recursive: true, force: true });
+      const root = home;
+      // Agent tools such as Go leave read-only module caches under HOME; force
+      // cannot unlink their children, so grant u+w only after rm refuses.
+      if (root) await rm(root, { recursive: true, force: true }).catch((error: NodeJS.ErrnoException) => {
+        if (error.code !== "EACCES" && error.code !== "EPERM") throw error;
+        removeNativeHarnessBackup(root);
+      });
       homeRemoved = true;
       releaseCredentialHome?.();
     };
