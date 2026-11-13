@@ -493,6 +493,123 @@ See [doc/DEVELOPING.md](doc/DEVELOPING.md) for the full development guide.
 
 <br/>
 
+## Local setup: headroom 프록시로 Claude 에이전트 토큰 줄이기 (danny-zent fork)
+
+> 이 섹션은 `danny-zent/paperclip` fork의 로컬 운영 메모입니다. upstream 문서가 아닙니다.
+> 작성 2026-11-06 · headroom-ai 0.42.0 · Paperclip은 launchd `com.danny.paperclip`(`pnpm dev:once`)로 실행.
+
+[headroom](https://github.com/headroomlabs-ai/headroom)은 Anthropic API 요청을 압축해 토큰을 줄이는 로컬 프록시입니다.
+Paperclip에 적용하면 **서버에서 실행되는 모든 `claude_local` 에이전트**가 headroom을 거칩니다.
+
+### 왜 서버 전체에만 적용되는가
+
+- 에이전트는 구독(subscription) AI 연결을 씁니다. 이 경우 Paperclip은 에이전트 설정의 `env`에
+  `ANTHROPIC_BASE_URL`이 있으면 `The configured provider routing is incompatible with this AI connection`으로
+  거부합니다(`server/src/services/ai-connection-runtime.ts`). 그래서 에이전트별 적용은 불가합니다.
+- 에이전트용 `claude`는 서버 프로세스의 환경을 물려받습니다(`{ ...process.env, ...env }`,
+  `packages/adapters/claude-local/src/server/execute.ts`). 따라서 **Paperclip 서비스의 환경 변수**에
+  `ANTHROPIC_BASE_URL`을 넣으면 전체 적용됩니다.
+- `headroom wrap claude`(`hclaude` alias)는 터미널에서 직접 띄운 `claude`만 감싸므로 Paperclip에는 쓸 수 없습니다.
+
+### 구성
+
+| 항목 | 값 |
+| --- | --- |
+| headroom 서비스 | launchd `com.danny.headroom-paperclip`, `127.0.0.1:8788` (자동 재시작) |
+| 포트를 8787과 분리한 이유 | `hclaude`의 wrap 프록시(8787)가 꺼져도 Paperclip 에이전트가 영향받지 않게 |
+| 외부 전송 차단 | `HEADROOM_OFFLINE=1`, `HEADROOM_TELEMETRY=off`, `HEADROOM_BEACON=off`, `DO_NOT_TRACK=1` |
+| Paperclip 연결 | `com.danny.paperclip.plist`의 `EnvironmentVariables.ANTHROPIC_BASE_URL=http://127.0.0.1:8788` |
+| 로그 | `~/Library/Logs/headroom/paperclip-proxy.log` |
+
+`HEADROOM_OFFLINE=1`은 headroom 스스로 외부에 연결하는 것(비콘, 업데이트 확인, 모델 다운로드 등)을 모두 막고,
+사용자 요청을 Anthropic으로 전달하는 것만 허용합니다. 이 상태에서도 구독 OAuth 요청과 압축이 동작하는 것을 확인했습니다
+(`claude -p` 응답 정상, 요청 1건에서 397토큰 절감).
+
+### 설치
+
+1. headroom 서비스 plist를 `~/Library/LaunchAgents/com.danny.headroom-paperclip.plist`로 저장합니다.
+   `ORT_DYLIB_PATH`는 launchd가 `~/.zshrc`를 읽지 않아서 직접 지정합니다(설치된 onnxruntime 버전에 맞게 확인).
+
+   ```xml
+   <?xml version="1.0" encoding="UTF-8"?>
+   <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+   <plist version="1.0">
+   <dict>
+     <key>Label</key><string>com.danny.headroom-paperclip</string>
+     <key>ProgramArguments</key>
+     <array>
+       <string>/Users/danny/.local/bin/headroom</string>
+       <string>proxy</string><string>--port</string><string>8788</string>
+     </array>
+     <key>EnvironmentVariables</key>
+     <dict>
+       <key>PATH</key><string>/Users/danny/.local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+       <key>HOME</key><string>/Users/danny</string>
+       <key>ORT_DYLIB_PATH</key><string>/Users/danny/.local/share/uv/tools/headroom-ai/lib/python3.13/site-packages/onnxruntime/capi/libonnxruntime.1.31.1.dylib</string>
+       <key>HEADROOM_OFFLINE</key><string>1</string>
+       <key>HEADROOM_TELEMETRY</key><string>off</string>
+       <key>HEADROOM_BEACON</key><string>off</string>
+       <key>DO_NOT_TRACK</key><string>1</string>
+     </dict>
+     <key>RunAtLoad</key><true/>
+     <key>KeepAlive</key><true/>
+     <key>ThrottleInterval</key><integer>10</integer>
+     <key>StandardOutPath</key><string>/Users/danny/Library/Logs/headroom/paperclip-proxy.log</string>
+     <key>StandardErrorPath</key><string>/Users/danny/Library/Logs/headroom/paperclip-proxy.log</string>
+   </dict>
+   </plist>
+   ```
+
+2. 서비스를 등록하고 상태를 확인합니다.
+
+   ```bash
+   mkdir -p ~/Library/Logs/headroom
+   launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.danny.headroom-paperclip.plist
+   curl -s http://127.0.0.1:8788/health   # "ready":true
+   ```
+
+3. **실행 중인 에이전트 작업이 없을 때** Paperclip 서비스에 환경 변수를 넣고 다시 올립니다.
+   launchd에 새 환경 변수를 반영하려면 `kickstart -k`가 아니라 `bootout` → `bootstrap`이 필요합니다.
+
+   ```bash
+   cp -p ~/Library/LaunchAgents/com.danny.paperclip.plist ~/Library/LaunchAgents/com.danny.paperclip.plist.bak
+   /usr/libexec/PlistBuddy -c "Add :EnvironmentVariables:ANTHROPIC_BASE_URL string http://127.0.0.1:8788" \
+     ~/Library/LaunchAgents/com.danny.paperclip.plist
+   launchctl bootout gui/$(id -u)/com.danny.paperclip
+   launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.danny.paperclip.plist
+   ```
+
+### 적용 확인
+
+- 에이전트 실행 중 `ps eww <claude 또는 claude-agent-acp PID> | tr ' ' '\n' | grep ANTHROPIC_BASE_URL`에 8788이 보이는지
+- 에이전트 모델 변경(관리형 hello 검증 호출)이 422 없이 통과하는지
+- `~/Library/Logs/headroom/paperclip-proxy.log`에 `POST /v1/messages status=200`과 `tok_saved`가 찍히는지
+- 누적 절감량: `curl -s http://127.0.0.1:8788/stats`
+
+### 롤백
+
+```bash
+/usr/libexec/PlistBuddy -c "Delete :EnvironmentVariables:ANTHROPIC_BASE_URL" ~/Library/LaunchAgents/com.danny.paperclip.plist
+launchctl bootout gui/$(id -u)/com.danny.paperclip
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.danny.paperclip.plist
+# headroom 서비스까지 내리려면
+launchctl bootout gui/$(id -u)/com.danny.headroom-paperclip
+```
+
+### 주의
+
+- **단일 장애점**: headroom이 멈추면 Claude 에이전트가 모두 실패합니다. 이상하면 먼저 `curl http://127.0.0.1:8788/health`를 보고, 안 되면 롤백합니다.
+- **고객 데이터가 로컬 디스크에 남음**: 압축을 위해 프롬프트·도구 출력 원문이 `~/.headroom/ccr_store.db`, `compression_cache.db`에 저장됩니다.
+  에이전트가 다루는 고객 정보(TIN 등)도 포함될 수 있으므로 사내 고객 정보 보호 원칙에 따라 관리자(bong@zent.kr)와 확인하세요.
+- **`hclaude`의 업로드 비콘**: headroom의 익명 업로드 비콘(세션 요약을 Headroom Labs로 전송)은 **기본으로 켜져 있습니다**.
+  위 서비스는 꺼 두었지만 `hclaude` alias는 별도이므로 `HEADROOM_BEACON=off`를 붙이는 것을 권장합니다.
+
+  ```bash
+  alias hclaude='HEADROOM_BEACON=off headroom wrap claude --code-memory none'
+  ```
+
+<br/>
+
 ## Roadmap
 
 - ✅ Plugin system (e.g. add a knowledge base, custom tracing, queues, etc)
