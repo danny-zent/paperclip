@@ -103,3 +103,6 @@ test-results/
 
 # Content-addressed CI task results
 .turbo/
+
+# claude-mem plugin auto-generated per-directory memo files (local only)
+CLAUDE.md
