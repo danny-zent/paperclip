@@ -8045,7 +8045,7 @@ export function resolveRunnerdCodexSkillInputs(
 
 /** Controller admission budget; ordinary command and turn deadlines are independent. */
 export function coldAdmissionTimeoutMs(provider: string | undefined, agent: string | undefined, coldProcess: boolean): number {
-  return coldProcess && provider === "acpx" && agent === "pi" ? 60_000 : 30_000;
+  return coldProcess && provider === "acpx" && (agent === "pi" || agent === "claude") ? 60_000 : 30_000;
 }
 
 export interface RunnerCommandFailure extends Error {
